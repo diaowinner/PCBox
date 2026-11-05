@@ -1920,7 +1920,7 @@ codegen_mem_inline_ex(codeblock_t *block, int size, int store, int ea_rule, void
     uint32_t *slow[3] = { NULL, NULL, NULL };
     uint32_t *done;
 
-    codegen_alloc(block, 136);
+    codegen_alloc(block, 144);
     host_arm64_MOV_REG_LSR(block, ent, REG_W0, 12);
     host_arm64_LDR_IMM_X(block, tbl, REG_CPUSTATE, (int) ((uintptr_t) (store ? &cpu_state.lookup2_w : &cpu_state.lookup2_r) - (uintptr_t) &cpu_state));
     host_arm64_LDRX_REG_LSL3(block, ent, tbl, ent);
@@ -1949,6 +1949,14 @@ codegen_mem_inline_ex(codeblock_t *block, int size, int store, int ea_rule, void
         else
             host_arm64_LDR_REG(block, to, ent, REG_W0);
     }
+    /*The routines have the same contract on both paths: W0 = data, W1 =
+      abrt (build_load_routine). The uop's own fault exit after this reads
+      W1, and on this path it holds the lookup table's entry, or a store's
+      value for MEM_SRC_W1 - never 0. Left as it is, every access that hits
+      the table would leave the block from that exit, before the access's
+      result is used and with the PC still at the instruction: the
+      dispatcher then runs the same block again, forever.*/
+    host_arm64_MOVZ_IMM(block, REG_W1, 0);
     done = mem_inline_branch(block, MEM_INLINE_B);
     for (int i = 0; i < 3; i++) {
         if (slow[i])
@@ -4453,6 +4461,9 @@ const uOpFn uop_handlers[UOP_MAX] = {
         UOP_MASK]
     = codegen_CALL_INSTRUCTION_FUNC,
     [UOP_CALL_INSTRUCTION_FUNC_ORDERED &
+        UOP_MASK]
+    = codegen_CALL_INSTRUCTION_FUNC,
+    [UOP_CALL_REP_STRING &
         UOP_MASK]
     = codegen_CALL_INSTRUCTION_FUNC,
     [UOP_SMI_EXIT_IMM &
